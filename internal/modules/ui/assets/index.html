@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TechPix · Painel da Aula 1</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏦</text></svg>">
+</head>
+<body>
+
+<aside class="lateral">
+  <div class="marca">
+    <div class="marca-nome">TechPix</div>
+    <div class="marca-sub">Fintech Dev · Aula 1</div>
+  </div>
+
+  <nav id="nav">
+    <a href="#visao"        data-secao="visao"><span class="ico">◉</span> Visão geral</a>
+    <a href="#toques"       data-secao="toques"><span class="ico">✋</span> Os três toques <em>§4</em></a>
+    <a href="#ledger"       data-secao="ledger"><span class="ico">▤</span> Ledger ao vivo <em>§3</em></a>
+    <a href="#consistencia" data-secao="consistencia"><span class="ico">≈</span> Forte vs eventual <em>§5.5</em></a>
+    <a href="#dict"         data-secao="dict"><span class="ico">🔑</span> DICT e token bucket <em>§6.4</em></a>
+    <a href="#spi"          data-secao="spi"><span class="ico">⚡</span> SPI e reconciliação <em>§4.5</em></a>
+    <a href="#contencao"    data-secao="contencao"><span class="ico">⚔</span> Contenção <em>§3.7</em></a>
+    <a href="#latencia"     data-secao="latencia"><span class="ico">⏱</span> Orçamento de latência <em>§6.6</em></a>
+    <a href="#harness"      data-secao="harness"><span class="ico">🛡</span> Harness <em>§7.4</em></a>
+  </nav>
+
+  <div class="rodape-lateral">
+    <div class="linha-status"><span class="pill" id="status-api">conectando…</span></div>
+    <div class="linha-status"><span class="pill" id="status-bacen">BACEN…</span></div>
+    <div class="mini" id="config-lock">—</div>
+  </div>
+</aside>
+
+<main>
+
+<!-- ══════════════════ VISÃO GERAL ══════════════════ -->
+<section id="secao-visao" class="secao">
+  <header class="cabecalho">
+    <h1>Visão geral</h1>
+    <p>Um monólito modular. Um processo, um banco, seis módulos com fronteiras reais.
+       Todo número desta tela é <strong>soma sobre o log</strong> — não existe coluna de saldo.</p>
+  </header>
+
+  <div class="grade grade-3">
+    <div class="cartao destaque">
+      <h3>Conservação do dinheiro</h3>
+      <div class="balanco" id="balanco"></div>
+      <p class="nota">Ativo = Passivo, sempre. Se divergir um centavo, dinheiro foi criado ou destruído.</p>
+    </div>
+    <div class="cartao">
+      <h3>Invariantes agora</h3>
+      <div id="fitness-resumo" class="checks-mini"></div>
+    </div>
+    <div class="cartao">
+      <h3>Borda eventual</h3>
+      <div id="projecao-resumo" class="kpis"></div>
+    </div>
+  </div>
+
+  <div class="grade grade-2">
+    <div class="cartao">
+      <h3>Clientes</h3>
+      <div id="clientes" class="clientes"></div>
+      <div class="forma-inline">
+        <select id="dep-conta"></select>
+        <input id="dep-valor" type="number" value="1000" min="1" step="100">
+        <span class="mini">reais</span>
+        <button class="btn" id="btn-depositar">Depositar (cash-in)</button>
+      </div>
+      <p class="nota">O depósito também é partida dobrada: <code>D reserva_no_bc / C carteira</code>.
+         Não existe atalho "UPDATE saldo" em lugar nenhum deste sistema.</p>
+    </div>
+    <div class="cartao">
+      <h3>Plano de contas</h3>
+      <table class="tabela" id="tabela-contas"></table>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <h3>Pagamentos recentes</h3>
+    <table class="tabela" id="tabela-pagamentos"></table>
+  </div>
+</section>
+
+<!-- ══════════════════ TRÊS TOQUES ══════════════════ -->
+<section id="secao-toques" class="secao">
+  <header class="cabecalho">
+    <h1>Os três toques da Ana</h1>
+    <p>A tela gira. Ana toca <strong>pagar</strong> três vezes. Ela pagou uma vez, três vezes, ou nenhuma?
+       A resposta não está no código da interface — está na arquitetura.</p>
+  </header>
+
+  <div class="cartao">
+    <div class="forma">
+      <label>Pagador <select id="tq-conta"></select></label>
+      <label>Chave do recebedor <select id="tq-chave"></select></label>
+      <label>Valor (R$) <input id="tq-valor" type="number" value="5000" min="1"></label>
+      <label class="check"><input type="checkbox" id="tq-mesma-chave" checked> mesmo EndToEndId nos três toques</label>
+    </div>
+    <div class="acoes">
+      <button class="btn btn-primario" id="btn-toques">Ana toca 3× ao mesmo tempo</button>
+      <button class="btn" id="btn-toque-1">Um toque só</button>
+      <span class="mini" id="tq-e2e"></span>
+    </div>
+    <p class="nota" id="tq-aviso-chave"></p>
+  </div>
+
+  <div class="grade grade-3" id="tq-cartoes"></div>
+
+  <div class="grade grade-2">
+    <div class="cartao">
+      <h3>Efeito no dinheiro</h3>
+      <div id="tq-efeito" class="kpis"></div>
+      <div id="tq-veredito" class="veredito"></div>
+    </div>
+    <div class="cartao">
+      <h3>O que foi para o log</h3>
+      <div id="tq-ledger" class="lancamentos"></div>
+    </div>
+  </div>
+
+  <div class="cartao explicativo">
+    <h3>Por que funciona</h3>
+    <ol>
+      <li><strong>A chave identifica a intenção, não a tentativa.</strong> O EndToEndId nasce no cliente e sobrevive aos retries. Se nascesse no servidor, cada toque teria chave nova e a deduplicação seria uma ilusão.</li>
+      <li><strong>O registro tem estado.</strong> <code>IN_PROGRESS</code> resolve o retry <em>concorrente</em> — aquele que chega antes do primeiro terminar. Sem estado, os três passariam pela janela entre o "consultar" e o "gravar".</li>
+      <li><strong>O efeito é atômico com o registro.</strong> Marcar "concluído" e gravar os lançamentos acontecem no mesmo commit. Ou os dois, ou nenhum.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ══════════════════ LEDGER ══════════════════ -->
+<section id="secao-ledger" class="secao">
+  <header class="cabecalho">
+    <h1>Ledger ao vivo</h1>
+    <p>Log append-only de partidas dobradas. Cada bloco é um fato econômico que já aconteceu
+       e <strong>nunca mais vai mudar</strong>. O saldo é consequência, não causa.</p>
+  </header>
+
+  <div class="grade grade-2">
+    <div class="cartao">
+      <h3>Contas T</h3>
+      <label class="mini">conta <select id="lg-conta"></select></label>
+      <div id="conta-t"></div>
+    </div>
+    <div class="cartao">
+      <h3>Como o dinheiro se move num Pix</h3>
+      <div class="fluxo-pix">
+        <div class="fluxo-etapa">
+          <span class="etapa-num">1</span>
+          <div><strong>Reserva</strong><code>D carteira:ana → C pix_a_liquidar</code>
+          <em>o dinheiro sai da carteira e entra num limbo com nome</em></div>
+        </div>
+        <div class="fluxo-etapa">
+          <span class="etapa-num">2</span>
+          <div><strong>Liquidação</strong><code>D pix_a_liquidar → C reserva_no_bc</code>
+          <em>o SPI confirmou: sai da nossa Conta PI no BACEN</em></div>
+        </div>
+        <div class="fluxo-etapa alt">
+          <span class="etapa-num">2'</span>
+          <div><strong>Estorno</strong><code>D pix_a_liquidar → C carteira:ana</code>
+          <em>o SPI rejeitou: o dinheiro volta — como fato NOVO, nunca apagando a reserva</em></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <div class="cartao-topo">
+      <h3>Feed do log</h3>
+      <label class="mini"><input type="checkbox" id="lg-auto" checked> atualizar sozinho</label>
+    </div>
+    <div id="feed-ledger" class="feed"></div>
+  </div>
+</section>
+
+<!-- ══════════════════ CONSISTÊNCIA ══════════════════ -->
+<section id="secao-consistencia" class="secao">
+  <header class="cabecalho">
+    <h1>Forte no núcleo, eventual na borda</h1>
+    <p>Uma linha resolve 80% da arquitetura de dados de uma fintech: o <strong>ledger</strong> é forte
+       e linearizável; <strong>extrato, saldo de app e feed</strong> são eventuais.</p>
+  </header>
+
+  <div class="cartao">
+    <div class="acoes">
+      <label>Conta <select id="cs-conta"></select></label>
+      <label>Valor (R$) <input id="cs-valor" type="number" value="123.45" step="0.01"></label>
+      <button class="btn btn-primario" id="btn-consistencia">Disparar Pix e observar a divergência</button>
+    </div>
+    <div class="grafico-caixa">
+      <canvas id="grafico-consistencia" height="240"></canvas>
+      <div class="legenda">
+        <span><i class="cor-forte"></i> saldo forte (ledger, SERIALIZABLE)</span>
+        <span><i class="cor-eventual"></i> saldo eventual (projeção)</span>
+        <span><i class="cor-div"></i> divergência</span>
+      </div>
+    </div>
+    <div id="cs-kpis" class="kpis"></div>
+  </div>
+
+  <div class="grade grade-2">
+    <div class="cartao explicativo">
+      <h3>Por que isso é escolha, e não defeito</h3>
+      <p>Ver o extrato com 250ms de atraso não machuca ninguém. Debitar errado, sim.
+         Por isso quem autoriza pagamento é o ledger — <strong>nunca</strong> a projeção.</p>
+      <p>Se as tabelas de projeção forem apagadas, o sistema se reconstrói do log.
+         Se <code>entries</code> for apagada, acabou o sistema. Essa assimetria é o CQRS aqui.</p>
+    </div>
+    <div class="cartao">
+      <h3>Extrato (read model)</h3>
+      <table class="tabela" id="tabela-extrato"></table>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ DICT ══════════════════ -->
+<section id="secao-dict" class="secao">
+  <header class="cabecalho">
+    <h1>DICT: chave é recurso caro</h1>
+    <p>O diretório do BACEN é síncrono e está no caminho crítico. É protegido por
+       <strong>token bucket</strong>, com custo assimétrico: um acerto custa 1 token, um
+       <strong>404 custa 20</strong>. Segurança por incentivo — varrer sai caro, usar não.</p>
+  </header>
+
+  <div class="grade grade-2">
+    <div class="cartao">
+      <h3>Balde de tokens do TechPix no BACEN</h3>
+      <div class="balde">
+        <div class="balde-barra"><div id="balde-nivel"></div></div>
+        <div class="balde-num"><span id="balde-tokens">—</span><em>/ <span id="balde-cap">—</span> tokens</em></div>
+      </div>
+      <div id="dict-kpis" class="kpis"></div>
+      <div class="acoes">
+        <button class="btn" id="btn-balde-reset">Reiniciar balde</button>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <h3>Circuit breaker e cache</h3>
+      <div class="semaforo" id="breaker"></div>
+      <div id="cache-kpis" class="kpis"></div>
+      <p class="nota">Quando o circuito abre, o TechPix para de bater no DICT e responde 503 na hora.
+         Falhar rápido em casa é melhor que pendurar conexões esperando quem já disse não.</p>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <h3>Consultar</h3>
+    <div class="acoes acoes-multi">
+      <button class="btn" data-dict="bruno@bancobeta.com.br">Chave válida <em>1 token</em></button>
+      <button class="btn" data-dict="+5521988887777">Outra válida <em>1 token</em></button>
+      <button class="btn btn-aviso" data-dict="12345678900">CPF inválido <em>0 tokens: bloqueio local</em></button>
+      <button class="btn btn-perigo" data-dict="__inexistente__">Chave inexistente <em>20 tokens</em></button>
+      <button class="btn btn-perigo" id="btn-varredura">Varredura 5× <em>100 tokens</em></button>
+    </div>
+    <div id="dict-log" class="log"></div>
+  </div>
+</section>
+
+<!-- ══════════════════ SPI ══════════════════ -->
+<section id="secao-spi" class="secao">
+  <header class="cabecalho">
+    <h1>SPI: quando a resposta se perde</h1>
+    <p>O SPI liquida em moeda de banco central: <strong>final e irrevogável</strong>.
+       Se a confirmação não chega, não sabemos se aconteceu. Estornar por conta própria
+       destruiria dinheiro; reenviar duplicaria. Só resta <strong>reconciliar</strong>.</p>
+  </header>
+
+  <div class="grade grade-2">
+    <div class="cartao">
+      <h3>Painel do simulador do BACEN</h3>
+      <div class="forma">
+        <label>p50 (ms) <input id="spi-p50" type="number" value="280" step="10"></label>
+        <label>p99 (ms) <input id="spi-p99" type="number" value="460" step="10"></label>
+        <label>Taxa de rejeição <input id="spi-rjct" type="range" min="0" max="1" step="0.1" value="0"><span id="spi-rjct-val">0%</span></label>
+        <label class="check"><input type="checkbox" id="spi-buraco"> <strong>buraco negro</strong>: liquida e não responde</label>
+      </div>
+      <div class="acoes">
+        <button class="btn" id="btn-spi-aplicar">Aplicar no BACEN</button>
+        <button class="btn" id="btn-spi-real">Latência real (2,8s / 4,6s)</button>
+      </div>
+      <div id="spi-config" class="kpis"></div>
+    </div>
+
+    <div class="cartao">
+      <h3>Executar um Pix</h3>
+      <div class="forma">
+        <label>Pagador <select id="spi-conta"></select></label>
+        <label>Chave <select id="spi-chave"></select></label>
+        <label>Valor (R$) <input id="spi-valor" type="number" value="77"></label>
+      </div>
+      <div class="acoes">
+        <button class="btn btn-primario" id="btn-spi-pagar">Pagar e acompanhar</button>
+      </div>
+      <div id="spi-status" class="kpis"></div>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <h3>Linha do tempo do pagamento</h3>
+    <div id="spi-timeline" class="timeline"></div>
+    <div id="spi-janela" class="janela-incerteza"></div>
+  </div>
+
+  <div class="cartao explicativo">
+    <h3>As três semânticas</h3>
+    <div class="grade grade-3 semanticas">
+      <div><strong>at-most-once</strong><span class="ruim">pode PERDER</span><p>Nunca duplica. Inaceitável em fintech.</p></div>
+      <div><strong>at-least-once</strong><span class="ruim">pode DUPLICAR</span><p>Nunca perde. É o que a rede real entrega.</p></div>
+      <div><strong>exactly-once</strong><span class="ruim">impossível</span><p>Não existe em rede assíncrona.</p></div>
+    </div>
+    <p class="conclusao">O que se consegue é <strong>efeito exactly-once</strong>: a mensagem chega N vezes,
+       o efeito no ledger acontece uma. Idempotência + reconciliação por EndToEndId.</p>
+  </div>
+</section>
+
+<!-- ══════════════════ CONTENÇÃO ══════════════════ -->
+<section id="secao-contencao" class="secao">
+  <header class="cabecalho">
+    <h1>Contenção: onde nasce o ponto quente</h1>
+    <p>Pagamentos simultâneos da <strong>mesma conta</strong>, cada um com EndToEndId próprio —
+       intenções diferentes, sem idempotência para salvar. O saldo não pode estourar.</p>
+  </header>
+
+  <div class="cartao">
+    <div class="forma">
+      <label>Conta <select id="ct-conta"></select></label>
+      <label>Pagamentos simultâneos <input id="ct-n" type="number" value="12" min="2" max="24"></label>
+      <label>Valor de cada (R$) <input id="ct-valor" type="number" value="50"></label>
+    </div>
+    <div class="acoes">
+      <button class="btn btn-primario" id="btn-contencao">Disparar simultâneos</button>
+      <button class="btn" id="btn-ct-preparar">Preparar saldo (6× o valor)</button>
+      <span class="mini" id="ct-previsao"></span>
+    </div>
+    <div id="ct-grade" class="grade-tiros"></div>
+    <div id="ct-kpis" class="kpis"></div>
+  </div>
+
+  <div class="cartao explicativo">
+    <h3>O gargalo é coordenação, não IOPS</h3>
+    <p>2.700 escritas por segundo são troco para um NVMe de 500 mil IOPS. O que custa é
+       <strong>coordenar</strong>: garantir que duas transações não leiam o mesmo saldo e ambas aprovem.</p>
+    <ul>
+      <li><strong>Otimista (SSI)</strong> — ninguém espera lock, mas sob disputa aparecem abortos <code>40001</code> e retentativas.</li>
+      <li><strong>Pessimista (<code>SELECT … FOR UPDATE</code>)</strong> — ninguém perde trabalho, mas forma-se fila.</li>
+    </ul>
+    <p>Troque <code>LEDGER_LOCK_MODE</code> no <code>docker-compose.yml</code> e repita este teste.</p>
+  </div>
+</section>
+
+<!-- ══════════════════ LATÊNCIA ══════════════════ -->
+<section id="secao-latencia" class="secao">
+  <header class="cabecalho">
+    <h1>Orçamento de latência</h1>
+    <p>Teto normativo de <strong>40 segundos</strong> ponta a ponta (Res. BCB 195/2022).
+       Cada passo consome uma fatia. Trabalho do arquiteto: distribuir e defender esse orçamento.</p>
+  </header>
+
+  <div class="cartao">
+    <h3>Último pagamento</h3>
+    <div id="orcamento-barra" class="orcamento"></div>
+    <div id="orcamento-legenda" class="legenda-orcamento"></div>
+  </div>
+
+  <div class="grade grade-2">
+    <div class="cartao">
+      <h3>Latência é distribuição, não média</h3>
+      <table class="tabela" id="tabela-quantis"></table>
+      <p class="nota">Em fintech a <strong>cauda</strong> manda: é nela que o cliente desiste,
+         o timeout dispara e o retry nasce.</p>
+    </div>
+    <div class="cartao">
+      <h3>Referências oficiais</h3>
+      <table class="tabela" id="tabela-referencias"></table>
+      <h3 style="margin-top:18px">Contadores</h3>
+      <table class="tabela" id="tabela-contadores"></table>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ HARNESS ══════════════════ -->
+<section id="secao-harness" class="secao">
+  <header class="cabecalho">
+    <h1>Harness: invariantes como guardrail</h1>
+    <p>As frases da aula viraram teste automático — e rodam contra o banco <strong>de verdade</strong>,
+       agora. É isso que torna aceitável deixar um agente propor mudanças aqui.</p>
+  </header>
+
+  <div class="cartao">
+    <div class="cartao-topo">
+      <h3>Verificação ao vivo</h3>
+      <span id="fitness-selo" class="selo"></span>
+    </div>
+    <div id="fitness-completo" class="checks"></div>
+  </div>
+
+  <div class="cartao">
+    <h3>Tente furar o guardrail</h3>
+    <p class="nota">Nenhuma destas tentativas persiste: todas terminam em rollback.
+       O objetivo é ver <strong>qual camada</strong> reage.</p>
+    <div class="acoes acoes-multi">
+      <button class="btn btn-perigo" data-tentativa="desbalanceada">Criar dinheiro do nada <em>D 1,00 / C 9,00</em></button>
+      <button class="btn btn-perigo" data-tentativa="desbalanceada_no_banco">Crédito solto <em>INSERT direto no banco</em></button>
+      <button class="btn btn-perigo" data-tentativa="append_only">Alterar lançamento gravado <em>UPDATE em entries</em></button>
+      <button class="btn btn-perigo" data-tentativa="saldo_negativo">Estourar o saldo <em>débito de R$ 1.000.000</em></button>
+    </div>
+    <div id="tentativas-log" class="log"></div>
+  </div>
+
+  <div class="cartao explicativo">
+    <h3>A fronteira de permissão</h3>
+    <p>Um agente pode <strong>ler</strong> produção e <strong>propor</strong> mudanças. Mover dinheiro, não —
+       a ferramenta simplesmente não existe. Toda escrita passa pelo ledger e pela idempotência.</p>
+    <p>Observar e propor sem executar o irreversível é o que reconcilia "usar IA para evoluir o sistema"
+       com "correção &gt; disponibilidade".</p>
+  </div>
+</section>
+
+</main>
+
+<div id="brinde" class="brinde"></div>
+<script src="/app.js"></script>
+</body>
+</html>

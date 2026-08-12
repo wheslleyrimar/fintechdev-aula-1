@@ -1,0 +1,19 @@
+# binários compilados
+/bin/
+/techpix
+/bacensim
+
+# Go
+*.test
+*.out
+coverage.*
+
+# ambiente local
+.env
+.env.local
+
+# macOS
+.DS_Store
+
+# configuração local do Claude Code (permissões da máquina, não do projeto)
+.claude/settings.local.json

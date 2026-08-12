@@ -1,0 +1,82 @@
+-- =============================================================================
+-- NÃO É APLICADA AUTOMATICAMENTE (extensão .exemplo).
+--
+-- Aula 1 · §3.5 — a conta que justifica particionar:
+--
+--   87 bilhões de transações Pix por ano (nacional)
+--   × 3 lançamentos por transação        = ~260 bilhões de lançamentos/ano
+--   × 300–500 bytes por lançamento       = 75–130 TB/ano, antes de replicação
+--
+-- Nenhuma tabela única aguenta isso com índices saudáveis. Particionamento por
+-- TEMPO resolve o volume (e torna o descarte/arquivamento uma operação de
+-- metadados: DETACH PARTITION em vez de DELETE em bilhões de linhas).
+--
+-- Particionamento por HASH(conta_id) resolve outro problema — CONTENÇÃO. A
+-- maioria das transações toca uma ou duas contas na mesma partição e continua
+-- sendo uma transação local, serializable e rápida. As inter-partição passam a
+-- exigir coordenação: two-phase commit (atomicidade forte, custo em latência e
+-- fragilidade) ou saga (commit local + compensação explícita).
+--
+-- Fica fora do schema padrão por dois motivos honestos:
+--   1. na escala da aula, particionar é complexidade sem problema;
+--   2. constraint triggers e triggers de linha em tabela particionada exigem
+--      cuidado extra por versão de Postgres — e uma demo que falha na hora
+--      errada ensina a coisa errada.
+-- =============================================================================
+
+BEGIN;
+
+ALTER TABLE entries RENAME TO entries_legado;
+
+CREATE TABLE entries (
+    id             bigint      NOT NULL DEFAULT nextval('entries_id_seq'),
+    transaction_id uuid        NOT NULL,
+    account_id     uuid        NOT NULL,
+    direction      char(1)     NOT NULL CHECK (direction IN ('D','C')),
+    amount_cents   bigint      NOT NULL CHECK (amount_cents > 0),
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    -- A chave de partição PRECISA fazer parte da PK.
+    PRIMARY KEY (id, created_at)
+) PARTITION BY RANGE (created_at);
+
+-- Uma partição por mês, 13 meses a partir do mês anterior.
+DO $$
+DECLARE
+    m date := (date_trunc('month', now()) - interval '1 month')::date;
+BEGIN
+    FOR i IN 0..12 LOOP
+        EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS entries_%s PARTITION OF entries FOR VALUES FROM (%L) TO (%L)',
+            to_char(m, 'YYYYMM'), m, (m + interval '1 month')::date);
+        m := (m + interval '1 month')::date;
+    END LOOP;
+END $$;
+
+-- Rede de segurança: nada pode ficar sem partição.
+CREATE TABLE IF NOT EXISTS entries_default PARTITION OF entries DEFAULT;
+
+INSERT INTO entries (id, transaction_id, account_id, direction, amount_cents, created_at)
+SELECT id, transaction_id, account_id, direction, amount_cents, created_at FROM entries_legado;
+
+CREATE INDEX ON entries (account_id, id);
+CREATE INDEX ON entries (transaction_id);
+
+-- Os guardrails do ADR-001 precisam ser recriados sobre a tabela particionada.
+-- Triggers de linha em tabela particionada: Postgres 13+.
+CREATE TRIGGER entries_append_only
+    BEFORE UPDATE OR DELETE ON entries
+    FOR EACH ROW EXECUTE FUNCTION deny_mutation();
+
+DROP TABLE entries_legado;
+
+COMMIT;
+
+-- -----------------------------------------------------------------------------
+-- Esboço do particionamento por conta (o que ataca contenção, não volume):
+--
+--   PARTITION BY HASH (account_id)  →  16 partições
+--
+-- Consequência de arquitetura, não de banco: uma transferência entre contas de
+-- partições diferentes deixa de ser atômica de graça. Ou 2PC, ou saga.
+-- É exatamente a fronteira que a Aula 2 vai encontrar ao medir o ponto quente.
+-- -----------------------------------------------------------------------------

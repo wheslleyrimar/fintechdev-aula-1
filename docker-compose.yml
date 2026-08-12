@@ -1,0 +1,136 @@
+name: techpix-aula1
+
+services:
+  # ---------------------------------------------------------------------------
+  # Núcleo: PostgreSQL. ADR-001 — ledger ACID, serializable, append-only.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: techpix
+      POSTGRES_PASSWORD: techpix
+      POSTGRES_DB: techpix
+      # default_transaction_isolation fica em 'read committed' de propósito:
+      # quem escolhe SERIALIZABLE é o código do ledger, transação a transação.
+    command: ["postgres", "-c", "max_connections=200", "-c", "log_min_duration_statement=500"]
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U techpix -d techpix"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # ---------------------------------------------------------------------------
+  # Simulador do BACEN: DICT (token bucket, 404 = 20 tokens) + SPI (pacs.008/002).
+  # É um sistema EXTERNO, fora do nosso deploy e fora do nosso controle.
+  # ---------------------------------------------------------------------------
+  bacen-sim:
+    build:
+      context: .
+      args:
+        CMD: bacensim
+    environment:
+      PORT: "9090"
+      # DICT — política de token bucket (Aula 1, §6.4).
+      DICT_TOKENS_PER_MIN: "60"
+      DICT_BUCKET_SIZE: "100"
+      DICT_COST_OK: "1"
+      DICT_COST_NOT_FOUND: "20"
+      DICT_P99_MS: "300"
+      # SPI — latência simulada. Números reais: p50 2800ms / p99 4600ms.
+      # Em aula usamos a escala "rápida" para o demo não travar; ligue SPI_REALISTIC=true
+      # para sentir o orçamento de latência de verdade.
+      SPI_REALISTIC: "false"
+      SPI_P50_MS: "280"
+      SPI_P99_MS: "460"
+      SPI_REJECT_RATE: "0.0"
+      SPI_BLACKHOLE_RATE: "0.0"
+    ports: ["9090:9090"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9090/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # ---------------------------------------------------------------------------
+  # TechPix: o monólito modular. Um processo, um deploy, vários módulos.
+  # ---------------------------------------------------------------------------
+  techpix:
+    build:
+      context: .
+      args:
+        CMD: techpix
+    depends_on:
+      postgres: { condition: service_healthy }
+      bacen-sim: { condition: service_healthy }
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgres://techpix:techpix@postgres:5432/techpix?sslmode=disable"
+      BACEN_BASE_URL: "http://bacen-sim:9090"
+      # Como o NAVEGADOR enxerga o simulador: o painel fala direto com ele para
+      # mexer nos parâmetros do "BACEN" ao vivo.
+      BACEN_PUBLIC_URL: "http://localhost:9090"
+      TECHPIX_ISPB: "00000001"
+
+      # Lei de Little (§3.5): pool = TPS x latência. Suba/baixe e veja a fila nascer.
+      DB_MAX_CONNS: "20"
+      TX_MAX_RETRIES: "5"
+      # optimistic = SSI do Postgres decide; pessimistic = SELECT ... FOR UPDATE (§3.7)
+      LEDGER_LOCK_MODE: "optimistic"
+
+      # DICT no caminho crítico: timeout curto + circuit breaker + cache (§6.4)
+      DICT_TIMEOUT_MS: "1000"
+      DICT_CACHE_TTL_S: "300"
+      DICT_NEG_CACHE_TTL_S: "30"
+      BREAKER_FAILURES: "5"
+      BREAKER_OPEN_MS: "10000"
+
+      SPI_TIMEOUT_MS: "8000"
+
+      # Idempotência: quanto um retry concorrente espera o primeiro terminar (§4.3)
+      IDEMPOTENCY_WAIT_MS: "3000"
+      IDEMPOTENCY_LOCK_TTL_S: "30"
+
+      # Borda eventual: atraso proposital da projeção, para a aula VER o lag (§5.5)
+      PROJECTOR_LAG_MS: "250"
+      PROJECTOR_INTERVAL_MS: "150"
+
+      # Reconciliação por E2E ID quando a resposta do SPI se perde (§4.5)
+      RECONCILER_INTERVAL_S: "5"
+      RECONCILER_AFTER_S: "10"
+
+      # Limites de risco (falhar fechado)
+      PIX_MAX_AMOUNT_CENTS: "10000000"
+      PIX_NIGHT_LIMIT_CENTS: "100000"
+      PLDFT_BLOCKLIST: "99999999999"
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # ---------------------------------------------------------------------------
+  # Harness (§7.4): as invariantes viram teste automático. `make test`
+  # ---------------------------------------------------------------------------
+  tester:
+    profiles: ["test"]
+    image: golang:1.25-alpine
+    working_dir: /src
+    volumes:
+      - .:/src
+      - gomodcache:/go/pkg/mod
+    depends_on:
+      postgres: { condition: service_healthy }
+      bacen-sim: { condition: service_healthy }
+    environment:
+      TEST_DATABASE_URL: "postgres://techpix:techpix@postgres:5432/techpix_test?sslmode=disable"
+      ADMIN_DATABASE_URL: "postgres://techpix:techpix@postgres:5432/techpix?sslmode=disable"
+      BACEN_BASE_URL: "http://bacen-sim:9090"
+    command: ["go", "test", "./...", "-count=1", "-v"]
+
+volumes:
+  pgdata:
+  gomodcache:
