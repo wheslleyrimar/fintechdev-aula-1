@@ -243,6 +243,17 @@ Honestidade também é conteúdo de aula. Fica para as próximas:
 
 ---
 
+## Licença
+
+[MIT](LICENSE). Use, modifique e leve para os seus projetos — inclusive os alunos, sem pedir
+autorização. Só mantenha o aviso de copyright.
+
+Os números do BACEN citados aqui (SLAs, tetos, custos de token) valem para a data desta
+atualização. **O Pix muda com frequência: revalide na fonte oficial antes de reusar em produção
+ou em uma turma futura.**
+
+---
+
 ## A pergunta para levar
 
 > Onde, no sistema de vocês, uma decisão está sendo tomada **na fé**, sem evidência?
