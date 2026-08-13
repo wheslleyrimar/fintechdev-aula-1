@@ -36,6 +36,15 @@ São as alavancas de arquitetura, visíveis sem abrir código.
 Aba **Os três toques**. Deixe o valor em R$ 5.000 (o da narrativa) e clique
 **"Ana toca 3× ao mesmo tempo"**.
 
+> ⚠ **Aula depois das 20h?** O limite noturno (20h–06h, horário de Brasília) é de R$ 1.000 e
+> os três toques vão voltar `RECUSADO · LIMITE_NOTURNO`. Duas saídas: use R$ 500 no lugar de
+> R$ 5.000, ou suba `PIX_NIGHT_LIMIT_CENTS` no `docker-compose.yml` e rode
+> `docker compose up -d techpix`.
+>
+> Se acontecer sem querer, **aproveite**: é a §6.5 passo 3 (falhar fechado) se apresentando
+> sozinha, e o painel já explica que essa recusa acontece *antes* do ledger — nada foi gravado,
+> nem a chave de idempotência foi usada.
+
 O que apontar, na ordem em que aparece:
 
 1. **O EndToEndId** aparece ao lado dos botões. Formato do BACEN: `E` + ISPB + timestamp +

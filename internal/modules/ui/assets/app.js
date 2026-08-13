@@ -236,6 +236,20 @@ const visao = {
 
 const selo = (s) => ({ SETTLED: 'ok', RESERVED: 'aviso', REFUNDED: 'perigo' }[s] || 'neutro');
 
+// O motivo específico (LIMITE_NOTURNO, PLDFT_BLOQUEADO…) mora em detalhes;
+// o código de topo é só a família da recusa.
+const motivoDe = (r) => r.corpo?.erro?.detalhes?.motivo || r.corpo?.erro?.codigo || '—';
+
+// Recusas que têm conserto óbvio ganham a dica junto — em aula, adivinhar
+// o parâmetro errado custa cinco minutos de plateia parada.
+const DICAS = {
+  LIMITE_NOTURNO: 'Entre 20h e 6h (horário de Brasília) o limite é R$ 1.000. Baixe o valor, ' +
+    'ou suba PIX_NIGHT_LIMIT_CENTS no docker-compose.yml e rode `docker compose up -d techpix`.',
+  SALDO_INSUFICIENTE: 'Volte à Visão geral e faça um cash-in, ou baixe o valor.',
+  LIMITE_EXCEDIDO: 'Acima do teto por transação (PIX_MAX_AMOUNT_CENTS).',
+  PLDFT_BLOQUEADO: 'Recebedor em lista restritiva — falhar fechado é o comportamento correto aqui.',
+};
+
 /* ===========================================================================
    OS TRÊS TOQUES
    =========================================================================== */
@@ -311,7 +325,9 @@ const toques = {
       el('div', { class: 'toque-linha' }, el('span', {}, 'levou'), el('span', {}, ms(r.ms))),
       p ? el('div', { class: 'toque-linha' }, el('span', {}, 'status'), el('span', {}, p.status)) : null,
       p ? el('div', { class: 'toque-linha' }, el('span', {}, 'tx reserva'), el('span', {}, (p.tx_reserva || '—').slice(0, 8))) : null,
-      erro ? el('div', { class: 'toque-linha' }, el('span', {}, 'motivo'), el('span', {}, r.corpo?.erro?.codigo || '—')) : null,
+      // Numa recusa, o que ensina é o motivo ESPECÍFICO — não o código guarda-chuva.
+      erro ? el('div', { class: 'toque-linha' }, el('span', {}, 'motivo'), el('span', {}, motivoDe(r))) : null,
+      erro ? el('div', { class: 'toque-detalhe' }, r.corpo?.erro?.mensagem || '') : null,
       el('div', { class: 'toque-barra', style: `width:${Math.min(100, (r.ms / 1200) * 100)}%` }));
     $('#toque-' + i).className = 'toque ' + classe;
   },
@@ -337,21 +353,29 @@ const toques = {
       recusados.length ? kpi('recusas', recusados.length, 'aviso') : null);
 
     const v = el('div', { class: 'veredito' + (certo ? '' : ' ruim') });
-    const codigo = recusados[0]?.corpo?.erro?.codigo;
+    const motivo = recusados.length ? motivoDe(recusados[0]) : null;
+    const mensagem = recusados[0]?.corpo?.erro?.mensagem || '';
+    const dica = DICAS[motivo] ? `<br><span class="mini">${DICAS[motivo]}</span>` : '';
+    // Recusa ANTES do ledger (risco, chave inválida) nem chega a tocar na chave
+    // de idempotência: não moveu nada, então pode ser reavaliada à vontade.
+    const antesDoLedger = ['LIMITE_NOTURNO', 'LIMITE_EXCEDIDO', 'PLDFT_BLOQUEADO', 'VALOR_INVALIDO'].includes(motivo);
 
     if (!certo) {
       v.innerHTML = `Movimentou ${brl(movido)} quando deveria ter movimentado ${brl(esperado)}.
         <strong>Invariante violada</strong> — isso é incidente, não resultado.`;
     } else if (recusados.length === resultados.length) {
-      v.innerHTML = `Os ${n} toques foram <strong>recusados</strong> (${codigo}) e o saldo
-        <strong>não se moveu</strong> — ${brl(movido)}.<br>
-        Repare que as ${n} respostas são idênticas: a recusa também é idempotente. A primeira
-        tentativa decidiu, as outras receberam a mesma decisão de volta — não uma segunda chance
-        de passar.` + (codigo === 'SALDO_INSUFICIENTE'
-          ? `<br><span class="mini">Sem saldo? Volte à Visão geral e faça um cash-in, ou baixe o valor.</span>` : '');
+      v.innerHTML = `Os ${n} toques foram <strong>recusados</strong> — <code>${motivo}</code> —
+        e o saldo <strong>não se moveu</strong>.<br>${mensagem}<br>` +
+        (antesDoLedger
+          ? `Esta recusa acontece <strong>antes</strong> do ledger, então nem chegou a usar a chave
+             de idempotência: nada foi gravado, e por isso ela pode ser reavaliada a qualquer momento
+             (a regra de hoje pode não ser a de amanhã).`
+          : `Repare que as ${n} respostas são idênticas: a recusa também é idempotente. A primeira
+             tentativa decidiu, as outras receberam a mesma decisão de volta — não uma segunda
+             chance de passar.`) + dica;
     } else if (recusados.length) {
-      v.innerHTML = `${aceitos.length} aceito(s) e ${recusados.length} recusado(s) (${codigo}).
-        Saiu da conta ${brl(movido)} — exatamente o que foi aceito.`;
+      v.innerHTML = `${aceitos.length} aceito(s) e ${recusados.length} recusado(s)
+        (<code>${motivo}</code>). Saiu da conta ${brl(movido)} — exatamente o que foi aceito.${dica}`;
     } else if (mesma) {
       v.innerHTML = `Ana tocou <strong>${n}×</strong>. Aconteceu <strong>1×</strong>.
         Foi respondida <strong>${n}×</strong>.<br>
